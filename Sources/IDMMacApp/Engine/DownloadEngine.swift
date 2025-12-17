@@ -50,6 +50,8 @@ actor DownloadEngine {
                     onProgress: onProgress
                 )
                 onCompletion(.success(destination))
+            } catch is CancellationError {
+                // Treat cancellation (pause) as a non-error; caller will update state.
             } catch {
                 onCompletion(.failure(error))
             }

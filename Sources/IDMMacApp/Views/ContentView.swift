@@ -1,6 +1,24 @@
 import SwiftUI
 import SwiftData
 
+struct DownloadCommandActions {
+    var newDownload: () -> Void
+    var deleteSelected: () -> Void
+    var toggleSelected: () -> Void
+    var focusSearch: () -> Void
+}
+
+enum DownloadCommandKey: FocusedValueKey {
+    typealias Value = DownloadCommandActions
+}
+
+extension FocusedValues {
+    var downloadCommands: DownloadCommandActions? {
+        get { self[DownloadCommandKey.self] }
+        set { self[DownloadCommandKey.self] = newValue }
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \DownloadItem.createdAt, order: .reverse) private var storedItems: [DownloadItem]
@@ -8,6 +26,8 @@ struct ContentView: View {
     @StateObject private var viewModel = DownloadViewModel()
     @State private var showingAddSheet = false
     @State private var pendingURLString = ""
+    @State private var selectedID: UUID?
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -34,6 +54,7 @@ struct ContentView: View {
             }
             .navigationTitle("IDM for Mac")
             .toolbarRole(.editor)
+            .focusedValue(\.downloadCommands, commandActions)
         }
         .onAppear {
             viewModel.attach(modelContext: modelContext)
@@ -55,9 +76,14 @@ struct ContentView: View {
                             item: item,
                             pauseAction: { viewModel.pause(item) },
                             resumeAction: { viewModel.resume(item) },
-                            deleteAction: { viewModel.delete(item) }
+                            deleteAction: { viewModel.delete(item) },
+                            isSelected: item.id == selectedID
                         )
                         .padding(.horizontal)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedID = item.id
+                        }
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
@@ -91,6 +117,7 @@ struct ContentView: View {
         TextField("Search downloads", text: $viewModel.searchQuery)
             .textFieldStyle(.roundedBorder)
             .padding(.horizontal)
+            .focused($isSearchFocused)
     }
 
     private func addPendingURL() {
@@ -100,5 +127,28 @@ struct ContentView: View {
         }
         pendingURLString = ""
         showingAddSheet = false
+    }
+
+    private var commandActions: DownloadCommandActions {
+        DownloadCommandActions(
+            newDownload: { showingAddSheet = true },
+            deleteSelected: {
+                guard let id = selectedID, let item = viewModel.downloads.first(where: { $0.id == id }) else { return }
+                viewModel.delete(item)
+                selectedID = nil
+            },
+            toggleSelected: {
+                guard let id = selectedID, let item = viewModel.downloads.first(where: { $0.id == id }) else { return }
+                switch item.state {
+                case .downloading:
+                    viewModel.pause(item)
+                case .completed:
+                    break
+                default:
+                    viewModel.resume(item)
+                }
+            },
+            focusSearch: { isSearchFocused = true }
+        )
     }
 }

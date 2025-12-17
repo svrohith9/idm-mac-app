@@ -65,6 +65,11 @@ struct ContentView: View {
         .onChange(of: storedItems) { _, newValue in
             viewModel.loadPersisted(newValue)
         }
+        .onChange(of: showingAddSheet) { _, isPresented in
+            if isPresented {
+                isURLFieldFocused = true
+            }
+        }
     }
 
     private var mainList: some View {
@@ -104,11 +109,9 @@ struct ContentView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($isURLFieldFocused)
                 .onSubmit(addPendingURL)
-                .task {
-                    // Focus the field as soon as the sheet appears so Cmd+V works immediately.
-                    await MainActor.run {
-                        isURLFieldFocused = true
-                    }
+                .onAppear {
+                    // Focus the field so Cmd+V works immediately.
+                    isURLFieldFocused = true
                 }
 
             HStack {

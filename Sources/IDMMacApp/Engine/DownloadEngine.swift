@@ -24,6 +24,7 @@ actor DownloadEngine {
     static let shared = DownloadEngine()
 
     private let session: URLSession
+    private let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
     private let fileManager = FileManager.default
 
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
@@ -88,8 +89,8 @@ actor DownloadEngine {
 
         let head = try await fetchHead(for: item.url)
 
-        // If the server does not support range requests, fall back to single-stream download.
-        guard head.supportsRanges else {
+        // If the server does not support range requests or length is unknown, fall back to single-stream download.
+        guard head.supportsRanges, let totalLength = head.totalBytes else {
             return try await downloadSingleStream(
                 item: item,
                 totalBytes: head.totalBytes,
@@ -97,7 +98,6 @@ actor DownloadEngine {
             )
         }
 
-        let totalLength = head.totalBytes
         var chunkStates = try chunkPlan(for: item, totalBytes: totalLength, segments: segments)
 
         startTimes[item.id] = .now
@@ -137,7 +137,7 @@ actor DownloadEngine {
     }
 
     private struct HeadInfo {
-        let totalBytes: Int64
+        let totalBytes: Int64?
         let supportsRanges: Bool
     }
 
@@ -151,12 +151,13 @@ actor DownloadEngine {
             return probeInfo
         }
 
-        throw DownloadEngineError.missingContentLength
+        return HeadInfo(totalBytes: nil, supportsRanges: false)
     }
 
     private func headRequest(url: URL) async throws -> HeadInfo {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<400).contains(http.statusCode) else {
@@ -173,25 +174,21 @@ actor DownloadEngine {
             lengthValue = expected
         }
 
-        guard let totalBytes = lengthValue else {
-            throw DownloadEngineError.missingContentLength
-        }
-
         let supportsRanges = (http.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased().contains("bytes") ?? false)
-        return HeadInfo(totalBytes: totalBytes, supportsRanges: supportsRanges)
+        return HeadInfo(totalBytes: lengthValue, supportsRanges: supportsRanges)
     }
 
     private func rangeProbe(url: URL) async throws -> HeadInfo {
         var request = URLRequest(url: url)
         request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw DownloadEngineError.invalidResponse
         }
 
-        // 206 expected for range; some servers return 200 with full body (then treat as non-range).
-        let supportsRanges = http.statusCode == 206
+        let supportsRanges = http.statusCode == 206 || (http.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased().contains("bytes") ?? false)
 
         var totalBytes: Int64?
         if let contentRange = http.value(forHTTPHeaderField: "Content-Range") {
@@ -206,20 +203,22 @@ actor DownloadEngine {
             totalBytes = value
         }
 
-        guard let finalTotal = totalBytes else {
-            throw DownloadEngineError.missingContentLength
+        let expected = response.expectedContentLength
+        if totalBytes == nil, expected > 0 {
+            totalBytes = expected
         }
 
-        return HeadInfo(totalBytes: finalTotal, supportsRanges: supportsRanges)
+        return HeadInfo(totalBytes: totalBytes, supportsRanges: supportsRanges)
     }
 
     // Single-stream download used when server does not support Range headers.
     private func downloadSingleStream(
         item: DownloadItem,
-        totalBytes: Int64,
+        totalBytes: Int64?,
         onProgress: @escaping (DownloadProgress) -> Void
     ) async throws -> URL {
-        let request = URLRequest(url: item.url)
+        var request = URLRequest(url: item.url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         let (bytes, _) = try await session.bytes(for: request)
         let tempDir = try makeTempDirectory(for: item.id)
         let tempFile = tempDir.appendingPathComponent("single-\(item.id.uuidString)")
@@ -246,10 +245,13 @@ actor DownloadEngine {
 
                 let progress = DownloadProgress(
                     itemID: item.id,
-                    progress: totalBytes > 0 ? Double(received) / Double(totalBytes) : 0,
+                    progress: {
+                        guard let totalBytes, totalBytes > 0 else { return 0 }
+                        return Double(received) / Double(totalBytes)
+                    }(),
                     state: .downloading,
                     bytesReceived: received,
-                    totalBytes: totalBytes,
+                    totalBytes: totalBytes ?? 0,
                     speedBytesPerSecond: 0,
                     chunks: []
                 )
@@ -325,6 +327,7 @@ actor DownloadEngine {
 
         var request = URLRequest(url: item.url)
         request.setValue(rangeValue, forHTTPHeaderField: "Range")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
         let (bytes, _) = try await session.bytes(for: request)
         let chunkURL = chunkURL(for: tempDir, chunk: chunk)

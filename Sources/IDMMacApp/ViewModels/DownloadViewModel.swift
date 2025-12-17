@@ -47,6 +47,11 @@ final class DownloadViewModel: ObservableObject {
         downloads = items.sorted { $0.createdAt > $1.createdAt }
     }
 
+    func addDownload(from string: String, segments: Int = 4) {
+        guard let url = normalizeURL(from: string) else { return }
+        addDownload(from: url, segments: segments)
+    }
+
     func addDownload(from url: URL, segments: Int = 4) {
         let destination = Self.defaultDestination(for: url)
         let item = DownloadItem(
@@ -191,7 +196,7 @@ final class DownloadViewModel: ObservableObject {
 
         clipboardTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             guard let self else { return }
-            guard let string = NSPasteboard.general.string(forType: .string), let url = URL(string: string) else { return }
+            guard let string = NSPasteboard.general.string(forType: .string), let url = self.normalizeURL(from: string) else { return }
 
             Task { @MainActor in
                 if !self.downloads.contains(where: { $0.url == url }) && !self.recentlyRemoved.contains(url) {
@@ -209,5 +214,24 @@ final class DownloadViewModel: ObservableObject {
     private static func defaultDestination(for url: URL) -> URL {
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
         return downloads.appendingPathComponent(url.lastPathComponent)
+    }
+
+    private func normalizeURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmed) {
+            return url
+        }
+
+        let allowed = CharacterSet.urlFragmentAllowed
+            .union(.urlPathAllowed)
+            .union(.urlQueryAllowed)
+            .union(.urlHostAllowed)
+
+        if let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: allowed),
+           let url = URL(string: encoded) {
+            return url
+        }
+
+        return nil
     }
 }

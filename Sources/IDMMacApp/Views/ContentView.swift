@@ -134,9 +134,8 @@ struct ContentView: View {
     }
 
     private func addPendingURL() {
-        guard let url = URL(string: pendingURLString) else { return }
         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-            viewModel.addDownload(from: url)
+            viewModel.addDownload(from: pendingURLString)
         }
         pendingURLString = ""
         showingAddSheet = false

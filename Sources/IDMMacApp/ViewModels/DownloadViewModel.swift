@@ -120,7 +120,7 @@ final class DownloadViewModel: ObservableObject {
             case .all:
                 return matchesSearch(item)
             case .active:
-                return (.queued == item.state || .downloading == item.state) && matchesSearch(item)
+                return (.queued == item.state || .downloading == item.state || .paused == item.state) && matchesSearch(item)
             case .completed:
                 return item.state == .completed && matchesSearch(item)
             case .failed:

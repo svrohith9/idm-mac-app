@@ -219,7 +219,7 @@ actor DownloadEngine {
         totalBytes: Int64,
         onProgress: @escaping (DownloadProgress) -> Void
     ) async throws -> URL {
-        var request = URLRequest(url: item.url)
+        let request = URLRequest(url: item.url)
         let (bytes, _) = try await session.bytes(for: request)
         let tempDir = try makeTempDirectory(for: item.id)
         let tempFile = tempDir.appendingPathComponent("single-\(item.id.uuidString)")

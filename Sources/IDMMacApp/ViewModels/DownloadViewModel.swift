@@ -112,7 +112,7 @@ final class DownloadViewModel: ObservableObject {
         recentlyRemoved.insert(item.url)
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
-            await MainActor.run {
+            _ = await MainActor.run {
                 self?.recentlyRemoved.remove(item.url)
             }
         }

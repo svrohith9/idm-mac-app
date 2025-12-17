@@ -51,7 +51,7 @@ struct DownloadRowView: View {
 
             ZStack {
                 Circle()
-                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.35) : Color.quaternary, lineWidth: 6)
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.35) : Color(.quaternaryLabelColor), lineWidth: 6)
                     .frame(width: 46, height: 46)
 
                 Circle()

@@ -271,18 +271,16 @@ actor DownloadEngine {
             return item.chunks
         }
 
-        // Simple heuristic: avoid tiny chunks; scale down for slow networks/small files.
-        let minChunkSize: Int64 = 2 * 1024 * 1024 // 2 MB
+        // Use requested segments (capped at 8) to maximize concurrency; avoid limiting chunk size.
         let clampedSegments = max(1, min(segments, 8))
         let actualSegments = max(1, min(clampedSegments, Int(max(1, totalBytes))))
-        let adjustedSegments = max(1, min(actualSegments, Int(totalBytes / minChunkSize)))
-        let baseSize = adjustedSegments > 0 ? totalBytes / Int64(adjustedSegments) : totalBytes
-        let remainder = totalBytes % Int64(adjustedSegments)
+        let baseSize = totalBytes / Int64(actualSegments)
+        let remainder = totalBytes % Int64(actualSegments)
 
         var ranges: [DownloadChunkState] = []
         var lower: Int64 = 0
 
-        for index in 0..<adjustedSegments {
+        for index in 0..<actualSegments {
             let extra = index < remainder ? 1 : 0
             let upper = lower + baseSize - 1 + Int64(extra)
 

@@ -5,6 +5,7 @@ struct DownloadRowView: View {
     @Bindable var item: DownloadItem
     var pauseAction: () -> Void
     var resumeAction: () -> Void
+    var deleteAction: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -56,6 +57,16 @@ struct DownloadRowView: View {
             }
         }
         .padding(.vertical, 8)
+        .contextMenu {
+            Button("Pause") { pauseAction() }
+                .disabled(item.state != .downloading)
+            Button("Resume") { resumeAction() }
+                .disabled(item.state == .downloading || item.state == .completed)
+            Divider()
+            Button(role: .destructive, action: deleteAction) {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private var secondaryText: String {

@@ -54,7 +54,8 @@ struct ContentView: View {
                         DownloadRowView(
                             item: item,
                             pauseAction: { viewModel.pause(item) },
-                            resumeAction: { viewModel.resume(item) }
+                            resumeAction: { viewModel.resume(item) },
+                            deleteAction: { viewModel.delete(item) }
                         )
                         .padding(.horizontal)
                         .transition(.move(edge: .top).combined(with: .opacity))

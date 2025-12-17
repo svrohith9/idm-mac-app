@@ -7,6 +7,7 @@ struct DownloadCommandActions {
     var deleteSelected: () -> Void
     var toggleSelected: () -> Void
     var focusSearch: () -> Void
+    var pasteURL: (() -> Void)?
 }
 
 enum DownloadCommandKey: FocusedValueKey {
@@ -166,7 +167,11 @@ struct ContentView: View {
                     viewModel.resume(item)
                 }
             },
-            focusSearch: { isSearchFocused = true }
+            focusSearch: { isSearchFocused = true },
+            pasteURL: showingAddSheet ? {
+                pasteFromClipboard()
+                isURLFieldFocused = true
+            } : nil
         )
     }
 }

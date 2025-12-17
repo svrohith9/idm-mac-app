@@ -30,6 +30,13 @@ struct IDMCommands: Commands {
             }
             .keyboardShortcut("f")
 
+            if let paste = commands?.pasteURL {
+                Button("Paste URL") {
+                    paste()
+                }
+                .keyboardShortcut("v")
+            }
+
             Button("Pause/Resume Selected") {
                 commands?.toggleSelected()
             }

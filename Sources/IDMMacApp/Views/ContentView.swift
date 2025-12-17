@@ -116,7 +116,6 @@ struct ContentView: View {
 
             HStack {
                 Spacer()
-                Button("Paste") { pasteFromClipboard() }
                 Button("Cancel") { showingAddSheet = false }
                 Button("Add") { addPendingURL() }
                     .buttonStyle(.borderedProminent)

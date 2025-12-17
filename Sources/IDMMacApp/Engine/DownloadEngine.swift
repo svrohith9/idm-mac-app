@@ -87,53 +87,60 @@ actor DownloadEngine {
     ) async throws -> URL {
         try Task.checkCancellation()
 
-        let head = try await fetchHead(for: item.url)
+        do {
+            let head = try await fetchHead(for: item.url)
 
-        // If the server does not support range requests or length is unknown, fall back to single-stream download.
-        guard head.supportsRanges, let totalLength = head.totalBytes else {
-            return try await downloadSingleStream(
-                item: item,
-                totalBytes: head.totalBytes,
-                onProgress: onProgress
-            )
-        }
+            // If the server does not support range requests or length is unknown, fall back to single-stream download.
+            guard head.supportsRanges, let totalLength = head.totalBytes else {
+                return try await downloadSingleStream(
+                    item: item,
+                    totalBytes: head.totalBytes,
+                    onProgress: onProgress
+                )
+            }
 
-        var chunkStates = try chunkPlan(for: item, totalBytes: totalLength, segments: segments)
+            var chunkStates = try chunkPlan(for: item, totalBytes: totalLength, segments: segments)
 
-        startTimes[item.id] = .now
-        latestChunks[item.id] = Dictionary(uniqueKeysWithValues: chunkStates.map { ($0.id, $0) })
+            startTimes[item.id] = .now
+            latestChunks[item.id] = Dictionary(uniqueKeysWithValues: chunkStates.map { ($0.id, $0) })
 
-        let tempDir = try makeTempDirectory(for: item.id)
+            let tempDir = try makeTempDirectory(for: item.id)
 
-        // Spawn one child task per chunk to stream bytes concurrently using HTTP ranges.
-        try await withThrowingTaskGroup(of: DownloadChunkState.self) { group in
-            for chunk in chunkStates {
-                group.addTask { [weak self] in
-                    guard let self else { throw DownloadEngineError.invalidResponse }
-                    return try await self.downloadChunk(
-                        for: item,
-                        chunk: chunk,
-                        totalBytes: totalLength,
-                        tempDir: tempDir,
-                        onProgress: onProgress
-                    )
+            // Spawn one child task per chunk to stream bytes concurrently using HTTP ranges.
+            try await withThrowingTaskGroup(of: DownloadChunkState.self) { group in
+                for chunk in chunkStates {
+                    group.addTask { [weak self] in
+                        guard let self else { throw DownloadEngineError.invalidResponse }
+                        return try await self.downloadChunk(
+                            for: item,
+                            chunk: chunk,
+                            totalBytes: totalLength,
+                            tempDir: tempDir,
+                            onProgress: onProgress
+                        )
+                    }
+                }
+
+                chunkStates.removeAll()
+                for try await updatedChunk in group {
+                    chunkStates.append(updatedChunk)
                 }
             }
 
-            chunkStates.removeAll()
-            for try await updatedChunk in group {
-                chunkStates.append(updatedChunk)
-            }
+            chunkStates.sort { $0.id < $1.id }
+            try mergeChunks(chunks: chunkStates, destination: item.destination, tempDir: tempDir)
+
+            latestChunks[item.id] = nil
+            activeTasks[item.id] = nil
+            startTimes[item.id] = nil
+
+            return item.destination
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Fallback: if segmented path fails, attempt single-stream download.
+            return try await downloadSingleStream(item: item, totalBytes: nil, onProgress: onProgress)
         }
-
-        chunkStates.sort { $0.id < $1.id }
-        try mergeChunks(chunks: chunkStates, destination: item.destination, tempDir: tempDir)
-
-        latestChunks[item.id] = nil
-        activeTasks[item.id] = nil
-        startTimes[item.id] = nil
-
-        return item.destination
     }
 
     private struct HeadInfo {

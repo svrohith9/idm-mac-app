@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SwiftData
 
@@ -28,6 +29,7 @@ struct ContentView: View {
     @State private var pendingURLString = ""
     @State private var selectedID: UUID?
     @FocusState private var isSearchFocused: Bool
+    @FocusState private var isURLFieldFocused: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -100,10 +102,18 @@ struct ContentView: View {
 
             TextField("https://example.com/file.zip", text: $pendingURLString)
                 .textFieldStyle(.roundedBorder)
+                .focused($isURLFieldFocused)
                 .onSubmit(addPendingURL)
+                .task {
+                    // Focus the field as soon as the sheet appears so Cmd+V works immediately.
+                    await MainActor.run {
+                        isURLFieldFocused = true
+                    }
+                }
 
             HStack {
                 Spacer()
+                Button("Paste") { pasteFromClipboard() }
                 Button("Cancel") { showingAddSheet = false }
                 Button("Add") { addPendingURL() }
                     .buttonStyle(.borderedProminent)
@@ -127,6 +137,13 @@ struct ContentView: View {
         }
         pendingURLString = ""
         showingAddSheet = false
+    }
+
+    private func pasteFromClipboard() {
+        if let str = NSPasteboard.general.string(forType: .string) {
+            pendingURLString = str.trimmingCharacters(in: .whitespacesAndNewlines)
+            isURLFieldFocused = true
+        }
     }
 
     private var commandActions: DownloadCommandActions {

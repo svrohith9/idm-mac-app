@@ -140,6 +140,19 @@ actor DownloadEngine {
     }
 
     private func fetchHead(for url: URL) async throws -> HeadInfo {
+        // First try HEAD; if it fails or lacks info, fall back to a range probe (bytes=0-0).
+        if let headInfo = try? await headRequest(url: url) {
+            return headInfo
+        }
+
+        if let probeInfo = try? await rangeProbe(url: url) {
+            return probeInfo
+        }
+
+        throw DownloadEngineError.missingContentLength
+    }
+
+    private func headRequest(url: URL) async throws -> HeadInfo {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
 
@@ -153,9 +166,10 @@ actor DownloadEngine {
             lengthValue = total
         }
 
-        // As a fallback, attempt a small GET to derive length.
-        let total = response.expectedContentLength
-        if total > 0 { lengthValue = total }
+        let expected = response.expectedContentLength
+        if expected > 0 {
+            lengthValue = expected
+        }
 
         guard let totalBytes = lengthValue else {
             throw DownloadEngineError.missingContentLength
@@ -163,6 +177,38 @@ actor DownloadEngine {
 
         let supportsRanges = (http.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased().contains("bytes") ?? false)
         return HeadInfo(totalBytes: totalBytes, supportsRanges: supportsRanges)
+    }
+
+    private func rangeProbe(url: URL) async throws -> HeadInfo {
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw DownloadEngineError.invalidResponse
+        }
+
+        // 206 expected for range; some servers return 200 with full body (then treat as non-range).
+        let supportsRanges = http.statusCode == 206
+
+        var totalBytes: Int64?
+        if let contentRange = http.value(forHTTPHeaderField: "Content-Range") {
+            // Format: bytes 0-0/12345
+            let parts = contentRange.split(separator: "/")
+            if let last = parts.last, let value = Int64(last) {
+                totalBytes = value
+            }
+        }
+
+        if totalBytes == nil, let length = http.value(forHTTPHeaderField: "Content-Length"), let value = Int64(length) {
+            totalBytes = value
+        }
+
+        guard let finalTotal = totalBytes else {
+            throw DownloadEngineError.missingContentLength
+        }
+
+        return HeadInfo(totalBytes: finalTotal, supportsRanges: supportsRanges)
     }
 
     // Single-stream download used when server does not support Range headers.

@@ -110,6 +110,7 @@ final class DownloadViewModel: ObservableObject {
         downloads.removeAll { $0.id == item.id }
         if let context = modelContext {
             context.delete(item)
+            persistChanges()
         }
     }
 

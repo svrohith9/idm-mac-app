@@ -1,0 +1,14 @@
+# Xcode & SwiftPM
+.DS_Store
+/.build
+/DerivedData
+/*.xcodeproj
+/*.xcworkspace
+/.swiftpm
+.swiftpm
+
+# SwiftPM local artifacts
+Package.resolved
+
+# User settings
+xcuserdata/

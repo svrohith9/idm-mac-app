@@ -1,0 +1,103 @@
+import SwiftUI
+import SwiftData
+
+struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \DownloadItem.createdAt, order: .reverse) private var storedItems: [DownloadItem]
+
+    @StateObject private var viewModel = DownloadViewModel()
+    @State private var showingAddSheet = false
+    @State private var pendingURLString = ""
+
+    var body: some View {
+        NavigationSplitView {
+            SidebarView(viewModel: viewModel)
+        } detail: {
+            ZStack(alignment: .topTrailing) {
+                mainList
+
+                Button {
+                    showingAddSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.headline)
+                        .padding(10)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .shadow(radius: 6, y: 2)
+                }
+                .buttonStyle(.plain)
+                .padding()
+            }
+            .background(.thinMaterial)
+            .sheet(isPresented: $showingAddSheet) {
+                addDownloadSheet
+            }
+            .navigationTitle("IDM for Mac")
+            .toolbarRole(.editor)
+        }
+        .onAppear {
+            viewModel.attach(modelContext: modelContext)
+            viewModel.loadPersisted(storedItems)
+        }
+        .onChange(of: storedItems) { _, newValue in
+            viewModel.loadPersisted(newValue)
+        }
+    }
+
+    private var mainList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                searchField
+
+                LazyVStack(spacing: 6) {
+                    ForEach(viewModel.filteredDownloads(), id: \.id) { item in
+                        DownloadRowView(
+                            item: item,
+                            pauseAction: { viewModel.pause(item) },
+                            resumeAction: { viewModel.resume(item) }
+                        )
+                        .padding(.horizontal)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+            }
+            .padding(.vertical)
+        }
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: viewModel.downloads.count)
+    }
+
+    private var addDownloadSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New Download")
+                .font(.title2.weight(.semibold))
+
+            TextField("https://example.com/file.zip", text: $pendingURLString)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(addPendingURL)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { showingAddSheet = false }
+                Button("Add") { addPendingURL() }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .frame(minWidth: 320)
+        .padding()
+    }
+
+    private var searchField: some View {
+        TextField("Search downloads", text: $viewModel.searchQuery)
+            .textFieldStyle(.roundedBorder)
+            .padding(.horizontal)
+    }
+
+    private func addPendingURL() {
+        guard let url = URL(string: pendingURLString) else { return }
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+            viewModel.addDownload(from: url)
+        }
+        pendingURLString = ""
+        showingAddSheet = false
+    }
+}

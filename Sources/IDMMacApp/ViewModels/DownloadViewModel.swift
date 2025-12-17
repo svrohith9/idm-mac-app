@@ -32,6 +32,7 @@ final class DownloadViewModel: ObservableObject {
     private let engine: DownloadEngine
     private var clipboardTimer: Timer?
     private weak var modelContext: ModelContext?
+    private var recentlyRemoved: Set<URL> = []
 
     init(engine: DownloadEngine = .shared, modelContext: ModelContext? = nil) {
         self.engine = engine
@@ -108,6 +109,13 @@ final class DownloadViewModel: ObservableObject {
     func delete(_ item: DownloadItem) {
         Task { await engine.pause(id: item.id) }
         downloads.removeAll { $0.id == item.id }
+        recentlyRemoved.insert(item.url)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            await MainActor.run {
+                self?.recentlyRemoved.remove(item.url)
+            }
+        }
         if let context = modelContext {
             context.delete(item)
             persistChanges()
@@ -186,7 +194,7 @@ final class DownloadViewModel: ObservableObject {
             guard let string = NSPasteboard.general.string(forType: .string), let url = URL(string: string) else { return }
 
             Task { @MainActor in
-                if !self.downloads.contains(where: { $0.url == url }) {
+                if !self.downloads.contains(where: { $0.url == url }) && !self.recentlyRemoved.contains(url) {
                     self.addDownload(from: url)
                 }
             }
